@@ -41,9 +41,9 @@ export default function PokerTable({ gameState, handResult, playerBuffs, handStr
     : 0;
 
   return (
-    <div className="relative flex-1 flex items-center justify-center p-4">
+    <div className="relative flex-1 flex items-center justify-center p-2 sm:p-4">
       {/* Table + seats container — overflow visible so seats outside ellipse show */}
-      <div className="relative w-full max-w-2xl aspect-[16/10]" style={{ overflow: 'visible' }}>
+      <div className="relative w-full max-w-md sm:max-w-lg lg:max-w-2xl aspect-[16/10]" style={{ overflow: 'visible' }}>
         {/* Outer table edge — dark wood rim */}
         <div
           className="absolute inset-0 rounded-[50%] shadow-2xl"
@@ -87,12 +87,12 @@ export default function PokerTable({ gameState, handResult, playerBuffs, handStr
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="px-5 py-2 rounded-[10px] border-2 border-[#e6b800]/40 glow-gold"
+              className="px-3 py-1 sm:px-5 sm:py-2 rounded-[10px] border-2 border-[#e6b800]/40 glow-gold"
               style={{
                 background: 'linear-gradient(180deg, #232344 0%, #1a1a2e 100%)',
               }}
             >
-              <span className="font-retro text-[#f4d03f] text-xs tracking-wide">
+              <span className="font-retro text-[#f4d03f] text-[8px] sm:text-xs tracking-wide">
                 POT: ${totalPot.toLocaleString()}
               </span>
               {gameState.pots.length > 1 && (
@@ -104,15 +104,15 @@ export default function PokerTable({ gameState, handResult, playerBuffs, handStr
           )}
 
           {/* Community cards */}
-          <div className="flex gap-2.5">
+          <div className="flex gap-1 sm:gap-2.5">
             {gameState.communityCards.map((card, i) => (
-              <Card key={`${card.rank}-${card.suit}`} card={card} delay={i * 0.2} />
+              <Card key={`${card.rank}-${card.suit}`} card={card} delay={i * 0.2} responsive />
             ))}
             {/* Empty card slots — Balatro-style dashed borders */}
             {Array.from({ length: 5 - gameState.communityCards.length }).map((_, i) => (
               <div
                 key={`empty-${i}`}
-                className="w-16 h-22 rounded-[10px] border-2 border-dashed border-[#3d3d6b]/40"
+                className="w-10 h-14 sm:w-16 sm:h-22 rounded-[8px] sm:rounded-[10px] border-2 border-dashed border-[#3d3d6b]/40"
               />
             ))}
           </div>
@@ -158,7 +158,7 @@ export default function PokerTable({ gameState, handResult, playerBuffs, handStr
               </div>
 
               <div
-                className="relative px-8 py-4 rounded-[14px] border-3 animate-banner-glow"
+                className="relative px-4 py-2 sm:px-8 sm:py-4 rounded-[14px] border-3 animate-banner-glow"
                 style={{
                   background: 'linear-gradient(180deg, #2a2a50 0%, #1a1a2e 50%, #151530 100%)',
                   borderWidth: '3px',

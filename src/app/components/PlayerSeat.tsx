@@ -64,7 +64,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
       transition={{ duration: 0.3, delay: player.seatIndex * 0.1 }}
     >
       {/* Hole cards + hand strength overlay */}
-      <div className="relative flex gap-0.5 mb-0.5 h-14">
+      <div className="relative flex gap-0.5 mb-0.5 h-10 sm:h-14">
         {player.holeCards.length > 0 ? (
           player.holeCards.map((card, i) => (
             <Card key={i} card={card} small delay={i * 0.15} />
@@ -155,7 +155,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
         )}
 
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center font-retro text-[9px] text-white shadow-lg border-2 ${dimmed}`}
+          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-retro text-[7px] sm:text-[9px] text-white shadow-lg border-2 ${dimmed}`}
           style={{
             backgroundColor: player.color,
             borderColor: isWinner ? '#f4d03f' : 'rgba(0,0,0,0.3)',
@@ -199,18 +199,18 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
 
       {/* Name + chips — Balatro panel */}
       <div
-        className={`relative text-center px-2 py-0.5 rounded-[6px] border-2 ${dimmed}`}
+        className={`relative text-center px-1.5 sm:px-2 py-0.5 rounded-[6px] border-2 ${dimmed}`}
         style={{
           background: isWinner ? '#2a2a50' : '#232344',
           borderColor: isWinner ? '#f4d03f' : '#3d3d6b',
           boxShadow: isWinner ? '0 0 12px rgba(244, 208, 63, 0.3)' : undefined,
         }}
       >
-        <div className="text-xs font-bold leading-tight" style={{ color: '#f0e6d3' }}>
+        <div className="text-[10px] sm:text-xs font-bold leading-tight" style={{ color: '#f0e6d3' }}>
           {player.name}
         </div>
         <div
-          className="font-retro text-[8px] leading-tight"
+          className="font-retro text-[6px] sm:text-[8px] leading-tight"
           style={{ color: isOut ? '#e8423f' : '#f4d03f' }}
         >
           {isOut ? 'ELIMINATED' : `$${player.chips.toLocaleString()}`}
@@ -240,7 +240,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="font-retro text-[8px] text-white uppercase px-2.5 py-1 rounded-[6px] border-2"
+          className="font-retro text-[6px] sm:text-[8px] text-white uppercase px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-[6px] border-2"
           style={{
             background: actionBadgeStyles[player.lastAction.action]?.bg ?? '#4a4a6a',
             borderColor: actionBadgeStyles[player.lastAction.action]?.border ?? '#3d3d5a',
@@ -272,8 +272,8 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
               bottom: '105%',
               left: '50%',
               transform: 'translateX(-50%)',
-              minWidth: '120px',
-              maxWidth: '200px',
+              minWidth: '80px',
+              maxWidth: '150px',
             }}
           >
             <div

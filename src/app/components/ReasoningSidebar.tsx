@@ -33,7 +33,7 @@ export default function ReasoningSidebar({ thoughts }: ReasoningSidebarProps) {
 
   return (
     <div
-      className="w-80 h-full flex flex-col border-l-2"
+      className="w-full h-full flex flex-col border-l-2"
       style={{
         background: '#1a1a2e',
         borderColor: '#3d3d6b',
