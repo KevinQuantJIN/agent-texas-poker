@@ -122,7 +122,7 @@ export default function Home() {
           <>
             <PokerTable gameState={gameState} handResult={handResult} playerBuffs={playerBuffs} handStrengths={handStrengths} />
             {/* Desktop sidebar */}
-            <div className="hidden lg:block">
+            <div className="hidden lg:block w-80 h-full">
               <ReasoningSidebar thoughts={thoughts} />
             </div>
             {/* Mobile sidebar overlay */}

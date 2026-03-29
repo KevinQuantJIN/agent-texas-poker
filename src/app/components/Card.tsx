@@ -41,7 +41,7 @@ export default function Card({ card, faceDown = false, delay = 0, small = false,
 
   const w = responsive
     ? 'w-10 h-14 sm:w-16 sm:h-22'
-    : small ? 'w-7 h-10 sm:w-9 sm:h-13' : 'w-16 h-22';
+    : small ? 'w-9 h-13' : 'w-16 h-22';
   const textSize = small ? 'text-sm' : 'text-base';
   const suitSize = small ? 'text-lg' : 'text-2xl';
 

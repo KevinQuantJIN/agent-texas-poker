@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { PlayerState } from '../../engine/types';
 import type { BuffDisplay, PlayerReaction, HandStrengthInfo } from '../hooks/useGameSocket';
 import Card from './Card';
+import { actionBadgeStyles, toneStyles, handStrengthColor } from './pokerStyles';
 
 interface PlayerSeatProps {
   player: PlayerState;
@@ -16,40 +17,6 @@ interface PlayerSeatProps {
   handStrength?: HandStrengthInfo;
   reaction?: PlayerReaction;
 }
-
-// Balatro-style action badge colors with borders
-const actionBadgeStyles: Record<string, { bg: string; border: string }> = {
-  raise: { bg: '#e8423f', border: '#b8332f' },
-  call: { bg: '#4fa4d4', border: '#3a7fa8' },
-  check: { bg: '#27ae60', border: '#1e8449' },
-  fold: { bg: '#4a4a6a', border: '#3d3d5a' },
-};
-
-// Speech bubble tone → style mapping
-const toneStyles: Record<PlayerReaction['tone'], { bg: string; border: string; text: string }> = {
-  gloat: { bg: '#2a4a2a', border: '#4ade80', text: '#4ade80' },
-  tilted: { bg: '#4a2a2a', border: '#e8423f', text: '#ff6b6b' },
-  respect: { bg: '#2a3a4a', border: '#4fa4d4', text: '#7dd3fc' },
-  salty: { bg: '#4a3a2a', border: '#f4d03f', text: '#fbbf24' },
-  chill: { bg: '#2a2a3a', border: '#8b8baa', text: '#c4c4e0' },
-  devastated: { bg: '#3a2a3a', border: '#9C27B0', text: '#ce93d8' },
-};
-
-// Hand strength → color mapping for visual hierarchy
-const handStrengthColor = (made: string): { bg: string; border: string; text: string } => {
-  const lower = made.toLowerCase();
-  if (lower.includes('royal') || lower.includes('straight flush'))
-    return { bg: '#4a1a4a', border: '#d946ef', text: '#f0abfc' }; // purple — legendary
-  if (lower.includes('four of a kind') || lower.includes('full house'))
-    return { bg: '#4a2a1a', border: '#f97316', text: '#fdba74' }; // orange — premium
-  if (lower.includes('flush') || lower.includes('straight'))
-    return { bg: '#1a3a4a', border: '#06b6d4', text: '#67e8f9' }; // cyan — strong
-  if (lower.includes('three of a kind') || lower.includes('two pair'))
-    return { bg: '#2a3a1a', border: '#84cc16', text: '#bef264' }; // lime — decent
-  if (lower.includes('pair') || lower.includes('pocket'))
-    return { bg: '#2a2a3a', border: '#8b8baa', text: '#c4c4e0' }; // grey — marginal
-  return { bg: '#1a1a2e', border: '#3d3d6b', text: '#6a6a8a' }; // dim — weak
-};
 
 export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAmount, position, buffDisplay, handStrength, reaction }: PlayerSeatProps) {
   const isOut = player.isEliminated;
@@ -64,7 +31,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
       transition={{ duration: 0.3, delay: player.seatIndex * 0.1 }}
     >
       {/* Hole cards + hand strength overlay */}
-      <div className="relative flex gap-0.5 mb-0.5 h-10 sm:h-14">
+      <div className="relative flex gap-0.5 mb-0.5 h-14">
         {player.holeCards.length > 0 ? (
           player.holeCards.map((card, i) => (
             <Card key={i} card={card} small delay={i * 0.15} />
@@ -155,7 +122,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
         )}
 
         <div
-          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-retro text-[7px] sm:text-[9px] text-white shadow-lg border-2 ${dimmed}`}
+          className={`w-10 h-10 rounded-full flex items-center justify-center font-retro text-[9px] text-white shadow-lg border-2 ${dimmed}`}
           style={{
             backgroundColor: player.color,
             borderColor: isWinner ? '#f4d03f' : 'rgba(0,0,0,0.3)',
@@ -199,18 +166,18 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
 
       {/* Name + chips — Balatro panel */}
       <div
-        className={`relative text-center px-1.5 sm:px-2 py-0.5 rounded-[6px] border-2 ${dimmed}`}
+        className={`relative text-center px-2 py-0.5 rounded-[6px] border-2 ${dimmed}`}
         style={{
           background: isWinner ? '#2a2a50' : '#232344',
           borderColor: isWinner ? '#f4d03f' : '#3d3d6b',
           boxShadow: isWinner ? '0 0 12px rgba(244, 208, 63, 0.3)' : undefined,
         }}
       >
-        <div className="text-[10px] sm:text-xs font-bold leading-tight" style={{ color: '#f0e6d3' }}>
+        <div className="text-xs font-bold leading-tight" style={{ color: '#f0e6d3' }}>
           {player.name}
         </div>
         <div
-          className="font-retro text-[6px] sm:text-[8px] leading-tight"
+          className="font-retro text-[8px] leading-tight"
           style={{ color: isOut ? '#e8423f' : '#f4d03f' }}
         >
           {isOut ? 'ELIMINATED' : `$${player.chips.toLocaleString()}`}
@@ -240,7 +207,7 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="font-retro text-[6px] sm:text-[8px] text-white uppercase px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-[6px] border-2"
+          className="font-retro text-[8px] text-white uppercase px-2.5 py-1 rounded-[6px] border-2"
           style={{
             background: actionBadgeStyles[player.lastAction.action]?.bg ?? '#4a4a6a',
             borderColor: actionBadgeStyles[player.lastAction.action]?.border ?? '#3d3d5a',
@@ -272,8 +239,8 @@ export default function PlayerSeat({ player, isActive, isDealer, isWinner, winAm
               bottom: '105%',
               left: '50%',
               transform: 'translateX(-50%)',
-              minWidth: '80px',
-              maxWidth: '150px',
+              minWidth: '120px',
+              maxWidth: '200px',
             }}
           >
             <div
