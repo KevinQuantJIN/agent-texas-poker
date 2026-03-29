@@ -140,7 +140,7 @@ export async function getAction(options: GetActionOptions): Promise<AgentAction>
     return foldOnError(playerId, promptContext.validActions, `Missing API key for ${providerName}`);
   }
 
-  const systemPrompt = buildSystemPrompt(promptContext.name, promptContext.personality, promptContext.buffPrompt, promptContext.scoutingPrompt);
+  const systemPrompt = buildSystemPrompt(promptContext.name, promptContext.personality, promptContext.buffPrompt, promptContext.scoutingPrompt, promptContext.strategyPrompt);
   const userPrompt = buildUserPrompt(promptContext);
   const body = config.formatRequest(userPrompt, systemPrompt);
   const headers = config.headers(apiKey);

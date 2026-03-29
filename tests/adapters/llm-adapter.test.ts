@@ -194,6 +194,8 @@ const mockPromptContext: PromptContext = {
   pot: 300,
   chips: 9900,
   chipsInPot: 100,
+  bigBlind: 100,
+  opponentChips: [{ name: 'Opponent', chips: 10000 }],
   round: 'preflop',
   actionHistory: '',
   validActions: callValidActions,

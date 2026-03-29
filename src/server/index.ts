@@ -9,6 +9,7 @@ import { getValidActions } from '../engine/betting';
 import { analyzeHandStrength, type HandStrengthInfo } from '../engine/hand-eval';
 import { BuffSystem } from '../engine/buffs';
 import { ScoutingSystem } from '../engine/scouting';
+import { StrategyJournal } from '../engine/strategy';
 import { generateReactions, buildHandNarrative, type ReactionContext, type Reaction } from '../engine/reactions';
 import { type TrashTalkContext } from '../adapters/prompt';
 import { WebSocketManager } from './websocket';
@@ -118,6 +119,7 @@ let currentGame: Game | null = null;
 let isGameRunning = false;
 let buffSystem: BuffSystem | null = null;
 let scoutingSystem: ScoutingSystem | null = null;
+let strategyJournal: StrategyJournal | null = null;
 
 // Track per-hand state for reactive buff triggers
 let handChipSnapshots: Map<string, number> = new Map(); // chips at hand start
@@ -157,16 +159,26 @@ async function getPlayerAction(
     scoutingPrompt = scoutingSystem.getScoutingPrompt(player.id, playerNames, playerChips);
   }
 
+  // Get strategy journal (self-awareness of own patterns)
+  const strategyPrompt = strategyJournal?.getStrategyPrompt(player.id, player.chips) ?? '';
+
+  const opponentChips = gameState.players
+    .filter(p => p.id !== player.id && !p.isEliminated && !p.isFolded)
+    .map(p => ({ name: p.name, chips: p.chips }));
+
   const promptContext: PromptContext = {
     name: player.name,
     personality,
     buffPrompt,
     scoutingPrompt,
+    strategyPrompt,
     holeCards: player.holeCards,
     communityCards: gameState.communityCards,
     pot: totalPot,
     chips: player.chips,
     chipsInPot: player.currentBet,
+    bigBlind: gameState.blinds.big,
+    opponentChips,
     round: gameState.round,
     actionHistory: buildActionHistoryString(),
     validActions,
@@ -198,6 +210,7 @@ async function handleGameEvent(event: GameEvent): Promise<void> {
       actionHistory = [];
       handFoldedPreflop.clear();
       scoutingSystem?.startHand();
+      strategyJournal?.startHand();
 
       // Roll buffs for each active player
       const players = currentGame!.getPlayers();
@@ -287,6 +300,13 @@ async function handleGameEvent(event: GameEvent): Promise<void> {
         );
       }
 
+      // Record action for strategy journal (self-awareness)
+      strategyJournal?.recordAction(
+        event.player.id,
+        event.action.action,
+        event.gameState.round,
+      );
+
       // Track preflop folds for reactive buffs
       if (event.action.action === 'fold' && event.gameState.round === 'preflop') {
         handFoldedPreflop.add(event.player.id);
@@ -351,6 +371,26 @@ async function handleGameEvent(event: GameEvent): Promise<void> {
               stackBefore: chipsBefore,
               foldedPreflop: handFoldedPreflop.has(p.id),
               wasBluffed: false, // TODO: detect bluffs from showdown data
+            });
+          }
+        }
+      }
+
+      // Record hand results for strategy journal (self-awareness)
+      if (strategyJournal) {
+        const currentPlayersStrat = currentGame!.getPlayers();
+        const currentHandNumber = stateManager.getGameState()?.handNumber ?? 0;
+        for (const p of currentPlayersStrat) {
+          if (!p.isEliminated) {
+            const chipsBefore = handChipSnapshots.get(p.id) ?? p.chips;
+            const chipsWon = winnersObj[p.id] ?? 0;
+            const chipsNow = p.chips + chipsWon;
+            strategyJournal.recordHandEnd(p.id, {
+              handNumber: currentHandNumber,
+              won: chipsWon > 0,
+              chipsDelta: chipsNow - chipsBefore,
+              currentChips: chipsNow,
+              sawShowdown: event.showdownHands.has(p.id),
             });
           }
         }
@@ -464,7 +504,15 @@ async function handleGameEvent(event: GameEvent): Promise<void> {
     case 'gameOver':
       wsManager.broadcast({ event: 'gameOver', data: event });
       isGameRunning = false;
+      stateManager.reset(); // Clear stale state so reconnecting clients see start screen
       console.log(`\n🏆 Game Over! Winner: ${event.winner.name} ($${event.winner.chips})`);
+      console.log('  Auto-restarting in 10 seconds...');
+      setTimeout(() => {
+        if (!isGameRunning) {
+          console.log('\n🔄 Auto-restarting game...');
+          startGame();
+        }
+      }, 10_000);
       break;
   }
 }
@@ -496,6 +544,12 @@ async function startGame(): Promise<void> {
     scoutingSystem.initPlayer(agent.id, allPlayerIds);
   }
 
+  // Initialize strategy journal for self-awareness
+  strategyJournal = new StrategyJournal();
+  for (const agent of AGENTS) {
+    strategyJournal.initPlayer(agent.id, 10000); // startingChips
+  }
+
   console.log(`Starting game with ${AGENTS.length} agents (mock=${MOCK_LLM})`);
 
   const game = new Game(
@@ -517,6 +571,15 @@ async function startGame(): Promise<void> {
   } catch (err) {
     console.error('Game error:', err);
     isGameRunning = false;
+    stateManager.reset();
+    // Auto-restart after error
+    console.log('  Auto-restarting after error in 10 seconds...');
+    setTimeout(() => {
+      if (!isGameRunning) {
+        console.log('\n🔄 Auto-restarting game after error...');
+        startGame();
+      }
+    }, 10_000);
   }
 }
 

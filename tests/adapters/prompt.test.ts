@@ -33,6 +33,8 @@ describe('buildUserPrompt', () => {
     pot: 500,
     chips: 9500,
     chipsInPot: 100,
+    bigBlind: 100,
+    opponentChips: [{ name: 'GPT-4o', chips: 8000 }],
     round: 'flop',
     actionHistory: 'GPT-4o: raise $400 → Claude: call $400',
     validActions: {
