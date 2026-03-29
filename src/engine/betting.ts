@@ -45,13 +45,16 @@ export function getValidActions(
  */
 export function validateAction(
   rawAction: AgentAction,
-  player: InternalPlayer,
   validActions: ValidActions
 ): AgentAction {
   const action = { ...rawAction };
 
-  // Handle fold — always valid
+  // Handle fold — but convert to check if there's nothing to call (folding a free check is irrational)
   if (action.action === 'fold') {
+    if (validActions.canCheck) {
+      action.action = 'check';
+      action.amount = undefined;
+    }
     return action;
   }
 

@@ -9,9 +9,9 @@ interface ConnectionStatusProps {
 }
 
 const statusConfig = {
-  connected: { color: 'bg-green-500', text: 'Connected', pulse: false },
-  disconnected: { color: 'bg-red-500', text: 'Disconnected', pulse: false },
-  reconnecting: { color: 'bg-yellow-500', text: 'Reconnecting...', pulse: true },
+  connected: { color: '#27ae60', text: 'ONLINE', pulse: false },
+  disconnected: { color: '#e8423f', text: 'OFFLINE', pulse: false },
+  reconnecting: { color: '#f4d03f', text: 'RECONNECTING', pulse: true },
 };
 
 export default function ConnectionStatus({ status }: ConnectionStatusProps) {
@@ -20,16 +20,22 @@ export default function ConnectionStatus({ status }: ConnectionStatusProps) {
   return (
     <div className="flex items-center gap-2">
       <div className="relative">
-        <div className={`w-2 h-2 rounded-full ${config.color}`} />
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: config.color }}
+        />
         {config.pulse && (
           <motion.div
-            className={`absolute inset-0 w-2 h-2 rounded-full ${config.color}`}
+            className="absolute inset-0 w-2 h-2 rounded-full"
+            style={{ backgroundColor: config.color }}
             animate={{ scale: [1, 2], opacity: [0.5, 0] }}
             transition={{ duration: 1, repeat: Infinity }}
           />
         )}
       </div>
-      <span className="text-[10px] text-gray-500">{config.text}</span>
+      <span className="font-retro text-[7px]" style={{ color: '#8888aa' }}>
+        {config.text}
+      </span>
     </div>
   );
 }

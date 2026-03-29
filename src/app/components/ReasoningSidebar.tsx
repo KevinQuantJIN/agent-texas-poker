@@ -1,84 +1,127 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentThought } from '../../engine/types';
-import { AGENT_COLORS } from '../mock-data';
 
 interface ReasoningSidebarProps {
   thoughts: AgentThought[];
 }
 
-const actionBadgeColors: Record<string, string> = {
-  raise: 'bg-red-500',
-  call: 'bg-blue-500',
-  check: 'bg-green-500',
-  fold: 'bg-gray-500',
+const actionEmoji: Record<string, string> = {
+  raise: '🔥',
+  call: '👀',
+  check: '✅',
+  fold: '💀',
+};
+
+const actionColors: Record<string, string> = {
+  raise: '#e8423f',
+  call: '#4fa4d4',
+  check: '#27ae60',
+  fold: '#4a4a6a',
 };
 
 export default function ReasoningSidebar({ thoughts }: ReasoningSidebarProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [thoughts]);
+
   return (
-    <div className="w-80 h-full bg-[#0d1220] border-l border-gray-800 flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-800">
-        <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-          Agent Reasoning
+    <div
+      className="w-80 h-full flex flex-col border-l-2"
+      style={{
+        background: '#1a1a2e',
+        borderColor: '#3d3d6b',
+      }}
+    >
+      {/* Header — Balatro panel style */}
+      <div
+        className="px-4 py-3 border-b-2 flex items-center justify-between"
+        style={{
+          background: '#232344',
+          borderColor: '#3d3d6b',
+        }}
+      >
+        <h2 className="font-retro text-[10px] uppercase tracking-wider" style={{ color: '#f0e6d3' }}>
+          Live Chat
         </h2>
+        <span
+          className="font-retro text-[8px] px-2 py-0.5 rounded-[4px] border"
+          style={{
+            color: '#8888aa',
+            borderColor: '#3d3d6b',
+            background: '#1a1a2e',
+          }}
+        >
+          {thoughts.length}
+        </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* Chat messages */}
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5 balatro-scroll">
         <AnimatePresence initial={false}>
-          {thoughts.map((thought, i) => {
-            const color = AGENT_COLORS[thought.playerId] || '#666';
+          {thoughts.map((thought) => {
+            const color = thought.color || '#8888aa';
+            const action = thought.action.action;
+            const amount = thought.action.amount;
+
             return (
               <motion.div
                 key={`${thought.playerId}-${thought.timestamp}`}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-                className="rounded-lg bg-[#141a2a] overflow-hidden"
-                style={{ borderLeft: `3px solid ${color}` }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="group py-1.5 px-2 rounded-[6px] transition-colors"
+                style={{ backgroundColor: 'transparent' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#232344'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
-                {/* Header */}
-                <div className="flex items-center justify-between px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                      style={{ backgroundColor: color }}
+                <div className="flex items-start gap-1.5 text-sm leading-relaxed">
+                  {/* Action emoji */}
+                  <span className="shrink-0 mt-0.5 text-xs">{actionEmoji[action] || '🃏'}</span>
+
+                  {/* Message content */}
+                  <div className="min-w-0">
+                    <span
+                      className="font-bold cursor-default"
+                      style={{ color }}
                     >
-                      {thought.playerName.slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="text-xs font-semibold text-white">
                       {thought.playerName}
                     </span>
+                    <span
+                      className="mx-1 font-bold"
+                      style={{ color: actionColors[action] || '#8888aa' }}
+                    >
+                      {action.toUpperCase()}
+                      {amount ? ` $${amount}` : ''}
+                    </span>
+                    <span style={{ color: '#f0e6d3' }}>
+                      {thought.reasoning}
+                    </span>
                   </div>
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold text-white uppercase ${
-                      actionBadgeColors[thought.action.action]
-                    }`}
-                  >
-                    {thought.action.action}
-                    {thought.action.amount ? ` $${thought.action.amount}` : ''}
-                  </span>
                 </div>
 
-                {/* Reasoning text */}
-                <div className="px-3 pb-2">
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    {thought.reasoning}
-                  </p>
-                </div>
-
-                {/* Meta */}
-                <div className="px-3 pb-2 flex items-center gap-2 text-[10px] text-gray-600">
-                  <span>Hand #{thought.handNumber}</span>
-                  <span>&middot;</span>
+                {/* Meta on hover */}
+                <div
+                  className="hidden group-hover:flex items-center gap-1.5 ml-5 mt-0.5 font-retro text-[7px]"
+                  style={{ color: '#4a4a6a' }}
+                >
+                  <span>H#{thought.handNumber}</span>
+                  <span>·</span>
                   <span className="capitalize">{thought.round}</span>
-                  <span>&middot;</span>
+                  <span>·</span>
                   <span>{thought.action.latencyMs}ms</span>
                 </div>
               </motion.div>
             );
           })}
         </AnimatePresence>
+        <div ref={bottomRef} />
       </div>
     </div>
   );

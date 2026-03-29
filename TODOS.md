@@ -53,3 +53,21 @@
 **Context:** Trigger condition: run pokersolver against 1000 random 5-7 card hands, compare results against a reference implementation. If any disagreements, or if the lack of TS types creates friction, switch to custom. The custom evaluator maps each hand to a numeric rank (straight flush=9, four of a kind=8, ..., high card=0) with kicker comparison.
 **Depends on:** Nothing. Can be done anytime.
 **Added:** 2026-03-29
+
+## Odd chip in split pot: clockwise from dealer
+**What:** When a pot splits unevenly (e.g., $3 pot, 2 winners = $2 and $1), the extra chip should go to the winner closest to the dealer's left (clockwise). Currently `distributePot()` gives the remainder to the first player in the winner array, which is not sorted by seat position.
+**Why:** Standard poker rule. Noticeable to poker-literate viewers in split pot scenarios.
+**Pros:** Poker-correct behavior, edge case but adds authenticity.
+**Cons:** Requires passing dealerIndex into distributePot and sorting winner IDs by seat position relative to the button. ~10 lines.
+**Context:** `pot.ts:95` gives remainder to index 0. `game.ts:resolveHand` doesn't sort winners by seat position. The design doc comment says "caller should order by clockwise from dealer button" but the implementation doesn't.
+**Depends on:** Nothing.
+**Added:** 2026-03-30 (eng review)
+
+## Default maxHands safety cap for cost control
+**What:** Set a default `maxHands` cap (e.g., 200) to prevent runaway API costs in long games. Currently defaults to 0 (unlimited).
+**Why:** With 6 LLMs at ~$0.15/hand, a degenerate game could run 500+ hands ($75+). A 200-hand cap costs ~$30 and still produces a full tournament.
+**Pros:** Prevents runaway costs in edge cases.
+**Cons:** Adds a default limit that might end games before a natural winner. Could be configurable via env var.
+**Context:** `maxHands` config already exists in GameConfig (server/index.ts:258 passes `maxHands: 0`). Change to `maxHands: 200` or add `MAX_HANDS` env var.
+**Depends on:** Nothing.
+**Added:** 2026-03-30 (eng review)

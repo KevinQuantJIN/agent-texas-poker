@@ -6,6 +6,7 @@ function makeThought(id: string, n: number): AgentThought {
   return {
     playerId: id,
     playerName: `Player ${id}`,
+    color: '#D4A574',
     reasoning: `Thought #${n}`,
     action: { action: 'call', reasoning: '', latencyMs: 100 },
     handNumber: 1,

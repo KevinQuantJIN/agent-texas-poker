@@ -5,7 +5,8 @@
 import type { AgentAction, ValidActions } from '../engine/types.js';
 import type { ProviderConfig } from './providers.js';
 import { PROVIDERS, PROVIDER_API_KEY_ENV, getProviderEndpoint } from './providers.js';
-import { buildSystemPrompt, buildUserPrompt, type PromptContext } from './prompt.js';
+import { buildSystemPrompt, buildUserPrompt, buildTrashTalkPrompt, type PromptContext, type TrashTalkContext } from './prompt.js';
+import { validateAction } from '../engine/betting.js';
 
 // ---- JSON extraction ----
 
@@ -23,41 +24,18 @@ export function extractJSON(text: string): object | null {
   }
 }
 
-// ---- Action validation ----
+// ---- Parse raw JSON into an AgentAction candidate ----
 
-export function validateAction(
-  raw: any,
-  validActions: ValidActions,
-): AgentAction | null {
+export function parseActionCandidate(raw: any): AgentAction | null {
   if (!raw || typeof raw !== 'object') return null;
 
   const reasoning = typeof raw.reasoning === 'string' ? raw.reasoning : '';
-  let action = raw.action;
+  const action = raw.action;
 
   if (!['fold', 'check', 'call', 'raise'].includes(action)) return null;
 
-  // Auto-convert check↔call per design doc
-  if (action === 'check' && !validActions.canCheck) {
-    action = validActions.canCall ? 'call' : 'fold';
-  }
-  if (action === 'call' && !validActions.canCall) {
-    action = validActions.canCheck ? 'check' : 'fold';
-  }
-
-  // Snap raise to valid range
-  if (action === 'raise') {
-    if (validActions.minRaise <= 0) {
-      // Can't raise — convert to call or check
-      action = validActions.canCall ? 'call' : validActions.canCheck ? 'check' : 'fold';
-    } else {
-      let amount = typeof raw.amount === 'number' ? raw.amount : validActions.minRaise;
-      if (amount < validActions.minRaise) amount = validActions.minRaise;
-      if (amount > validActions.maxRaise) amount = validActions.maxRaise;
-      return { action: 'raise', amount, reasoning, latencyMs: 0 };
-    }
-  }
-
-  return { action, reasoning, latencyMs: 0 };
+  const amount = typeof raw.amount === 'number' ? raw.amount : undefined;
+  return { action, amount, reasoning, latencyMs: 0 };
 }
 
 // ---- Circuit breaker state (per player) ----
@@ -89,11 +67,15 @@ export function isCircuitOpen(playerId: string): boolean {
 // ---- Rule-based fallback bot ----
 
 export function fallbackAction(validActions: ValidActions): AgentAction {
-  // Simple strategy: check if possible, otherwise fold
+  // Gambler fallback: check > call (if cheap) > fold. Never fold when you can check.
   if (validActions.canCheck) {
-    return { action: 'check', reasoning: 'Bot fallback: checking', latencyMs: 0 };
+    return { action: 'check', reasoning: 'Bot fallback: free card, always take it', latencyMs: 0 };
   }
-  return { action: 'fold', reasoning: 'Bot fallback: folding', latencyMs: 0 };
+  // Call if the amount is reasonable (less than 20% of a typical stack)
+  if (validActions.canCall && validActions.callAmount <= 2000) {
+    return { action: 'call', amount: validActions.callAmount, reasoning: 'Bot fallback: too curious to fold', latencyMs: 0 };
+  }
+  return { action: 'fold', reasoning: 'Bot fallback: even gamblers have limits', latencyMs: 0 };
 }
 
 // ---- Fetch with timeout + proxy support ----
@@ -158,7 +140,7 @@ export async function getAction(options: GetActionOptions): Promise<AgentAction>
     return foldOnError(playerId, promptContext.validActions, `Missing API key for ${providerName}`);
   }
 
-  const systemPrompt = buildSystemPrompt(promptContext.name, promptContext.personality);
+  const systemPrompt = buildSystemPrompt(promptContext.name, promptContext.personality, promptContext.buffPrompt, promptContext.scoutingPrompt);
   const userPrompt = buildUserPrompt(promptContext);
   const body = config.formatRequest(userPrompt, systemPrompt);
   const headers = config.headers(apiKey);
@@ -191,11 +173,12 @@ export async function getAction(options: GetActionOptions): Promise<AgentAction>
         throw new Error('Could not extract JSON from response');
       }
 
-      const action = validateAction(parsed, promptContext.validActions);
-      if (!action) {
+      const candidate = parseActionCandidate(parsed);
+      if (!candidate) {
         throw new Error('Invalid action in response');
       }
 
+      const action = validateAction(candidate, promptContext.validActions);
       action.latencyMs = latencyMs;
       resetFailures(playerId);
       return action;
@@ -216,6 +199,61 @@ export async function getAction(options: GetActionOptions): Promise<AgentAction>
 
   // Should not reach here, but TypeScript needs it
   return foldOnError(playerId, promptContext.validActions, 'Exhausted retries');
+}
+
+// ---- Trash talk LLM call ----
+
+export interface GetTrashTalkOptions {
+  playerId: string;
+  providerName: string;
+  trashTalkContext: TrashTalkContext;
+  timeoutMs?: number;
+  apiKey?: string;
+  providerConfig?: ProviderConfig;
+}
+
+export async function getTrashTalk(options: GetTrashTalkOptions): Promise<string | null> {
+  const {
+    playerId,
+    providerName,
+    trashTalkContext,
+    timeoutMs = 10_000, // shorter timeout — this is non-critical
+  } = options;
+
+  // Don't bother if circuit breaker is open
+  if (isCircuitOpen(playerId)) return null;
+
+  const config: ProviderConfig | undefined = options.providerConfig ?? PROVIDERS[providerName];
+  if (!config) return null;
+
+  const apiKey = options.apiKey ?? process.env[PROVIDER_API_KEY_ENV[providerName] ?? ''] ?? '';
+  if (!apiKey) return null;
+
+  const { system, user } = buildTrashTalkPrompt(trashTalkContext);
+  const body = config.formatRequest(user, system);
+  const headers = config.headers(apiKey);
+  const endpoint = getProviderEndpoint(config, apiKey);
+
+  try {
+    const response = await fetchWithTimeout(
+      endpoint,
+      { method: 'POST', headers, body: JSON.stringify(body) },
+      timeoutMs,
+    );
+
+    if (!response.ok) return null;
+
+    const json = await response.json();
+    const text = config.parseResponse(json);
+    if (!text) return null;
+
+    // Clean up: strip quotes, trim, cap length
+    let line = text.trim().replace(/^["']|["']$/g, '').trim();
+    if (line.length > 150) line = line.slice(0, 147) + '...';
+    return line;
+  } catch {
+    return null;
+  }
 }
 
 function foldOnError(

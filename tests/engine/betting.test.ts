@@ -83,7 +83,7 @@ describe('validateAction', () => {
   it('auto-converts check to call when bet outstanding', () => {
     const player = makePlayer();
     const va = getValidActions(player, 200, 100, 100);
-    const action = validateAction(makeAction({ action: 'check' }), player, va);
+    const action = validateAction(makeAction({ action: 'check' }), va);
     expect(action.action).toBe('call');
     expect(action.amount).toBe(200);
   });
@@ -91,14 +91,14 @@ describe('validateAction', () => {
   it('auto-converts call to check when nothing to call', () => {
     const player = makePlayer();
     const va = getValidActions(player, 0, 100, 100);
-    const action = validateAction(makeAction({ action: 'call' }), player, va);
+    const action = validateAction(makeAction({ action: 'call' }), va);
     expect(action.action).toBe('check');
   });
 
   it('snaps low raise to min-raise', () => {
     const player = makePlayer();
     const va = getValidActions(player, 200, 100, 100);
-    const action = validateAction(makeAction({ action: 'raise', amount: 50 }), player, va);
+    const action = validateAction(makeAction({ action: 'raise', amount: 50 }), va);
     expect(action.action).toBe('raise');
     expect(action.amount).toBe(va.minRaise);
   });
@@ -106,7 +106,7 @@ describe('validateAction', () => {
   it('snaps high raise to all-in', () => {
     const player = makePlayer({ chips: 5000 });
     const va = getValidActions(player, 200, 100, 100);
-    const action = validateAction(makeAction({ action: 'raise', amount: 999999 }), player, va);
+    const action = validateAction(makeAction({ action: 'raise', amount: 999999 }), va);
     expect(action.action).toBe('raise');
     expect(action.amount).toBe(5000); // all-in
   });
@@ -114,14 +114,14 @@ describe('validateAction', () => {
   it('converts raise to call when not enough to raise', () => {
     const player = makePlayer({ chips: 50 });
     const va = getValidActions(player, 200, 100, 100);
-    const action = validateAction(makeAction({ action: 'raise', amount: 300 }), player, va);
+    const action = validateAction(makeAction({ action: 'raise', amount: 300 }), va);
     expect(action.action).toBe('call');
   });
 
   it('allows fold always', () => {
     const player = makePlayer();
     const va = getValidActions(player, 200, 100, 100);
-    const action = validateAction(makeAction({ action: 'fold' }), player, va);
+    const action = validateAction(makeAction({ action: 'fold' }), va);
     expect(action.action).toBe('fold');
   });
 });

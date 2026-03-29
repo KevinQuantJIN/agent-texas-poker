@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   extractJSON,
-  validateAction,
+  parseActionCandidate,
   getAction,
   resetFailures,
   getConsecutiveFailures,
@@ -67,69 +67,54 @@ const callValidActions: ValidActions = {
   maxRaise: 10000,
 };
 
-describe('validateAction', () => {
-  it('validates a correct fold', () => {
-    const result = validateAction({ action: 'fold', reasoning: 'bad hand' }, baseValidActions);
-    expect(result).toEqual({ action: 'fold', reasoning: 'bad hand', latencyMs: 0 });
+describe('parseActionCandidate', () => {
+  it('parses a valid fold', () => {
+    const result = parseActionCandidate({ action: 'fold', reasoning: 'bad hand' });
+    expect(result).toEqual({ action: 'fold', amount: undefined, reasoning: 'bad hand', latencyMs: 0 });
   });
 
-  it('validates a correct check', () => {
-    const result = validateAction({ action: 'check', reasoning: 'free card' }, baseValidActions);
-    expect(result).toEqual({ action: 'check', reasoning: 'free card', latencyMs: 0 });
+  it('parses a valid check', () => {
+    const result = parseActionCandidate({ action: 'check', reasoning: 'free card' });
+    expect(result).toEqual({ action: 'check', amount: undefined, reasoning: 'free card', latencyMs: 0 });
   });
 
-  it('auto-converts check to call when check not available', () => {
-    const result = validateAction({ action: 'check', reasoning: 'oops' }, callValidActions);
+  it('parses a valid call', () => {
+    const result = parseActionCandidate({ action: 'call', reasoning: 'pot odds' });
     expect(result?.action).toBe('call');
   });
 
-  it('auto-converts call to check when nothing to call', () => {
-    const result = validateAction({ action: 'call', reasoning: 'oops' }, baseValidActions);
-    expect(result?.action).toBe('check');
-  });
-
-  it('snaps raise amount to minRaise when too low', () => {
-    const result = validateAction(
-      { action: 'raise', amount: 50, reasoning: 'small raise' },
-      baseValidActions,
-    );
+  it('parses a valid raise with amount', () => {
+    const result = parseActionCandidate({ action: 'raise', amount: 500, reasoning: 'big raise' });
     expect(result?.action).toBe('raise');
-    expect(result?.amount).toBe(200);
+    expect(result?.amount).toBe(500);
   });
 
-  it('snaps raise amount to maxRaise (all-in) when too high', () => {
-    const result = validateAction(
-      { action: 'raise', amount: 99999, reasoning: 'big raise' },
-      baseValidActions,
-    );
+  it('parses a raise without amount', () => {
+    const result = parseActionCandidate({ action: 'raise', reasoning: 'raise it' });
     expect(result?.action).toBe('raise');
-    expect(result?.amount).toBe(10000);
+    expect(result?.amount).toBeUndefined();
   });
 
-  it('uses minRaise when no amount provided', () => {
-    const result = validateAction(
-      { action: 'raise', reasoning: 'raise it' },
-      baseValidActions,
-    );
-    expect(result?.amount).toBe(200);
+  it('extracts reasoning as string', () => {
+    const result = parseActionCandidate({ action: 'fold', reasoning: 123 });
+    expect(result?.reasoning).toBe('');
   });
 
-  it('converts raise to call when minRaise is 0', () => {
-    const noRaise: ValidActions = { ...callValidActions, minRaise: 0, maxRaise: 0 };
-    const result = validateAction({ action: 'raise', amount: 500, reasoning: 'try' }, noRaise);
-    expect(result?.action).toBe('call');
+  it('defaults reasoning to empty string if missing', () => {
+    const result = parseActionCandidate({ action: 'fold' });
+    expect(result?.reasoning).toBe('');
   });
 
   it('returns null for unknown action', () => {
-    expect(validateAction({ action: 'bluff', reasoning: 'lol' }, baseValidActions)).toBeNull();
+    expect(parseActionCandidate({ action: 'bluff', reasoning: 'lol' })).toBeNull();
   });
 
   it('returns null for null input', () => {
-    expect(validateAction(null, baseValidActions)).toBeNull();
+    expect(parseActionCandidate(null)).toBeNull();
   });
 
   it('returns null for non-object input', () => {
-    expect(validateAction('fold', baseValidActions)).toBeNull();
+    expect(parseActionCandidate('fold')).toBeNull();
   });
 });
 
@@ -178,8 +163,20 @@ describe('fallbackAction', () => {
     expect(result.action).toBe('check');
   });
 
-  it('folds when check not available', () => {
+  it('calls when check not available and amount is reasonable', () => {
     const result = fallbackAction(callValidActions);
+    expect(result.action).toBe('call');
+  });
+
+  it('folds when call amount is too high', () => {
+    const expensiveCall: ValidActions = {
+      canCheck: false,
+      canCall: true,
+      callAmount: 5000,
+      minRaise: 10000,
+      maxRaise: 10000,
+    };
+    const result = fallbackAction(expensiveCall);
     expect(result.action).toBe('fold');
   });
 });
@@ -196,6 +193,7 @@ const mockPromptContext: PromptContext = {
   communityCards: [],
   pot: 300,
   chips: 9900,
+  chipsInPot: 100,
   round: 'preflop',
   actionHistory: '',
   validActions: callValidActions,

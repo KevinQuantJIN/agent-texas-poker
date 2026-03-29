@@ -44,6 +44,7 @@ export interface AgentAction {
 export interface AgentThought {
   playerId: string;
   playerName: string;
+  color: string;
   reasoning: string;
   action: AgentAction;
   handNumber: number;

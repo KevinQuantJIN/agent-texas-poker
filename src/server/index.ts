@@ -1,11 +1,16 @@
 import 'dotenv/config';
 import http from 'http';
 import { Game, AgentConfig, GameEvent } from '../engine/game';
-import { getAction as llmGetAction, resetAllFailures } from '../adapters/llm-adapter';
+import { getAction as llmGetAction, getTrashTalk, resetAllFailures, isCircuitOpen } from '../adapters/llm-adapter';
 import { createMockAdapter } from '../adapters/mock-adapter';
 import { createOpenRouterConfig } from '../adapters/providers';
 import { buildUserPrompt, buildSystemPrompt, PromptContext } from '../adapters/prompt';
 import { getValidActions } from '../engine/betting';
+import { analyzeHandStrength, type HandStrengthInfo } from '../engine/hand-eval';
+import { BuffSystem } from '../engine/buffs';
+import { ScoutingSystem } from '../engine/scouting';
+import { generateReactions, buildHandNarrative, type ReactionContext, type Reaction } from '../engine/reactions';
+import { type TrashTalkContext } from '../adapters/prompt';
 import { WebSocketManager } from './websocket';
 import { StateManager } from './state-manager';
 import type { AgentAction, AgentThought, GameState, PlayerState, ValidActions, InternalPlayer } from '../engine/types';
@@ -13,12 +18,22 @@ import type { AgentAction, AgentThought, GameState, PlayerState, ValidActions, I
 // ---- Agent definitions ----
 
 const AGENT_PERSONALITIES: Record<string, { personality: string }> = {
-  claude: { personality: 'Analytical, cautious, reads opponents carefully' },
-  'gpt-4o': { personality: 'Aggressive, calculated risk-taker' },
-  gemini: { personality: 'Balanced, adaptive strategist' },
-  grok: { personality: 'Loose cannon, unpredictable, trash-talks in reasoning' },
-  deepseek: { personality: 'Tight, mathematical, probability-focused' },
+  claude: { personality: 'Wild card, experimental plays' },
+  'gpt-4o': { personality: 'Wild card, experimental plays' },
+  gemini: { personality: 'Wild card, experimental plays' },
+  grok: { personality: 'Wild card, experimental plays' },
+  deepseek: { personality: 'Wild card, experimental plays' },
   llama: { personality: 'Wild card, experimental plays' },
+};
+
+// Agent colors keyed by player ID (works for both OpenRouter and direct API modes)
+const AGENT_COLORS: Record<string, string> = {
+  claude: '#D4A574',
+  'gpt-4o': '#74AA9C',
+  gemini: '#4285F4',
+  grok: '#FF6B35',
+  deepseek: '#00BCD4',
+  llama: '#9C27B0',
 };
 
 // OpenRouter model IDs for each agent
@@ -35,18 +50,18 @@ const USE_OPENROUTER = !!process.env.OPENROUTER_API_KEY;
 
 const AGENTS: AgentConfig[] = USE_OPENROUTER
   ? [
-      { id: 'claude', name: 'Claude', provider: 'openrouter', model: OPENROUTER_MODELS.claude, seatIndex: 0 },
-      { id: 'gpt-4o', name: 'GPT-4o', provider: 'openrouter', model: OPENROUTER_MODELS['gpt-4o'], seatIndex: 1 },
-      { id: 'gemini', name: 'Gemini', provider: 'openrouter', model: OPENROUTER_MODELS.gemini, seatIndex: 2 },
-      { id: 'grok', name: 'Grok', provider: 'openrouter', model: OPENROUTER_MODELS.grok, seatIndex: 3 },
-      { id: 'deepseek', name: 'DeepSeek', provider: 'openrouter', model: OPENROUTER_MODELS.deepseek, seatIndex: 4 },
-      { id: 'llama', name: 'Llama', provider: 'openrouter', model: OPENROUTER_MODELS.llama, seatIndex: 5 },
+      { id: 'claude', name: 'Claude', provider: 'openrouter', model: OPENROUTER_MODELS.claude, seatIndex: 0, color: AGENT_COLORS.claude },
+      { id: 'gpt-4o', name: 'GPT-4o', provider: 'openrouter', model: OPENROUTER_MODELS['gpt-4o'], seatIndex: 1, color: AGENT_COLORS['gpt-4o'] },
+      { id: 'gemini', name: 'Gemini', provider: 'openrouter', model: OPENROUTER_MODELS.gemini, seatIndex: 2, color: AGENT_COLORS.gemini },
+      { id: 'grok', name: 'Grok', provider: 'openrouter', model: OPENROUTER_MODELS.grok, seatIndex: 3, color: AGENT_COLORS.grok },
+      { id: 'deepseek', name: 'DeepSeek', provider: 'openrouter', model: OPENROUTER_MODELS.deepseek, seatIndex: 4, color: AGENT_COLORS.deepseek },
+      { id: 'llama', name: 'Llama', provider: 'openrouter', model: OPENROUTER_MODELS.llama, seatIndex: 5, color: AGENT_COLORS.llama },
     ]
   : [
-      { id: 'claude', name: 'Claude', provider: 'anthropic', model: 'claude-sonnet-4-5-20250514', seatIndex: 0 },
-      { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', seatIndex: 1 },
-      { id: 'gemini', name: 'Gemini', provider: 'google', model: 'gemini-2.5-flash', seatIndex: 2 },
-      { id: 'grok', name: 'Grok', provider: 'xai', model: 'grok-3', seatIndex: 3 },
+      { id: 'claude', name: 'Claude', provider: 'anthropic', model: 'claude-sonnet-4-5-20250514', seatIndex: 0, color: AGENT_COLORS.claude },
+      { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', seatIndex: 1, color: AGENT_COLORS['gpt-4o'] },
+      { id: 'gemini', name: 'Gemini', provider: 'google', model: 'gemini-2.5-flash', seatIndex: 2, color: AGENT_COLORS.gemini },
+      { id: 'grok', name: 'Grok', provider: 'xai', model: 'grok-3', seatIndex: 3, color: AGENT_COLORS.grok },
     ];
 
 // ---- Configuration ----
@@ -80,10 +95,33 @@ function buildActionHistoryString(): string {
   return actionHistory.join(' → ');
 }
 
+/** Compute hand strength analysis for all active players */
+function computeHandStrengths(gameState: GameState): Record<string, HandStrengthInfo> {
+  const strengths: Record<string, HandStrengthInfo> = {};
+  for (const player of gameState.players) {
+    if (!player.isEliminated && !player.isFolded && player.holeCards.length === 2) {
+      strengths[player.id] = analyzeHandStrength(player.holeCards, gameState.communityCards);
+    }
+  }
+  return strengths;
+}
+
+/** Broadcast hand strengths to all spectators */
+function broadcastHandStrengths(gameState: GameState): void {
+  const strengths = computeHandStrengths(gameState);
+  wsManager.broadcast({ event: 'handStrengths', data: strengths });
+}
+
 // ---- Game runner ----
 
 let currentGame: Game | null = null;
 let isGameRunning = false;
+let buffSystem: BuffSystem | null = null;
+let scoutingSystem: ScoutingSystem | null = null;
+
+// Track per-hand state for reactive buff triggers
+let handChipSnapshots: Map<string, number> = new Map(); // chips at hand start
+let handFoldedPreflop: Set<string> = new Set();          // who folded preflop
 
 const mockAdapters = new Map<string, ReturnType<typeof createMockAdapter>>();
 
@@ -108,13 +146,27 @@ async function getPlayerAction(
   const totalPot = gameState.pots.reduce((sum, p) => sum + p.amount, 0);
   const personality = AGENT_PERSONALITIES[player.id]?.personality ?? 'Balanced poker player';
 
+  // Get buff prompt from the buff system
+  const buffPrompt = buffSystem?.getBuffPrompt(player.id) ?? '';
+
+  // Get scouting report for this player's opponents
+  let scoutingPrompt = '';
+  if (scoutingSystem) {
+    const playerNames = new Map(gameState.players.map(p => [p.id, p.name]));
+    const playerChips = new Map(gameState.players.filter(p => !p.isEliminated).map(p => [p.id, p.chips]));
+    scoutingPrompt = scoutingSystem.getScoutingPrompt(player.id, playerNames, playerChips);
+  }
+
   const promptContext: PromptContext = {
     name: player.name,
     personality,
+    buffPrompt,
+    scoutingPrompt,
     holeCards: player.holeCards,
     communityCards: gameState.communityCards,
     pot: totalPot,
     chips: player.chips,
+    chipsInPot: player.currentBet,
     round: gameState.round,
     actionHistory: buildActionHistoryString(),
     validActions,
@@ -125,19 +177,45 @@ async function getPlayerAction(
     ? createOpenRouterConfig(player.model)
     : undefined;
 
-  return llmGetAction({
+  const action = await llmGetAction({
     playerId: player.id,
     providerName: player.provider,
     promptContext,
     providerConfig,
   });
+
+  // Mark player as bot if circuit breaker is open
+  if (isCircuitOpen(player.id) && currentGame) {
+    currentGame.markPlayerAsBot(player.id);
+  }
+
+  return action;
 }
 
-function handleGameEvent(event: GameEvent): void {
+async function handleGameEvent(event: GameEvent): Promise<void> {
   switch (event.type) {
     case 'handStart': {
       actionHistory = [];
-      wsManager.broadcast({ event: 'handStart', data: event });
+      handFoldedPreflop.clear();
+      scoutingSystem?.startHand();
+
+      // Roll buffs for each active player
+      const players = currentGame!.getPlayers();
+      handChipSnapshots.clear();
+      for (const p of players) {
+        if (!p.isEliminated) {
+          handChipSnapshots.set(p.id, p.chips);
+          if (buffSystem) {
+            const buff = buffSystem.rollHandBuff(p.id);
+            console.log(`  ${p.name}: ${buff.emoji} ${buff.name}`);
+          }
+        }
+      }
+
+      // Broadcast buff state alongside hand start
+      const buffDisplays = buffSystem?.getAllBuffDisplays() ?? {};
+      wsManager.broadcast({ event: 'handStart', data: { ...event, buffs: buffDisplays } });
+
       // Broadcast initial game state so frontend can render the table
       const initialState: GameState = {
         handNumber: event.handNumber,
@@ -145,13 +223,14 @@ function handleGameEvent(event: GameEvent): void {
         communityCards: [],
         pots: [],
         currentPlayerId: null,
-        players: currentGame!.getPlayers(),
+        players,
         dealerIndex: event.dealerIndex,
         blinds: event.blinds,
         isGameOver: false,
       };
       stateManager.setGameState(initialState);
       wsManager.broadcast({ event: 'gameState', data: initialState });
+      broadcastHandStrengths(initialState);
       console.log(`\n=== Hand #${event.handNumber} | Dealer: seat ${event.dealerIndex} ===`);
       break;
     }
@@ -167,6 +246,7 @@ function handleGameEvent(event: GameEvent): void {
       const thought: AgentThought = {
         playerId: event.player.id,
         playerName: event.player.name,
+        color: event.player.color,
         reasoning: event.action.reasoning,
         action: event.action,
         handNumber: event.gameState.handNumber,
@@ -175,6 +255,11 @@ function handleGameEvent(event: GameEvent): void {
       };
       stateManager.addThought(thought);
       stateManager.setGameState(event.gameState);
+
+      // Apply pacing — ensure minimum display time per action
+      try {
+        await stateManager.waitForPacing(event.action.latencyMs, 'actionDisplay');
+      } catch { /* pacing error should not halt the game */ }
 
       // Broadcast to spectators
       wsManager.broadcast({
@@ -187,15 +272,47 @@ function handleGameEvent(event: GameEvent): void {
           gameState: event.gameState,
         },
       });
+      broadcastHandStrengths(event.gameState);
+
+      // Record action for scouting system
+      if (scoutingSystem) {
+        // Determine highest bet from game state to detect if player faced a raise
+        const highestBet = Math.max(...event.gameState.players.map(p => p.currentBet));
+        scoutingSystem.recordAction(
+          event.player.id,
+          event.action.action,
+          event.gameState.round,
+          event.player.currentBet,
+          highestBet,
+        );
+      }
+
+      // Track preflop folds for reactive buffs
+      if (event.action.action === 'fold' && event.gameState.round === 'preflop') {
+        handFoldedPreflop.add(event.player.id);
+      }
 
       console.log(`  ${actionStr} (${event.action.latencyMs}ms) — "${event.action.reasoning.slice(0, 60)}..."`);
       break;
     }
 
-    case 'roundChange':
-      wsManager.broadcast({ event: 'roundChange', data: event });
+    case 'roundChange': {
+      actionHistory = [];
+      // Build and persist the updated game state with new community cards
+      const roundState: GameState = {
+        ...stateManager.getGameState()!,
+        round: event.round,
+        communityCards: [...event.communityCards],
+      };
+      stateManager.setGameState(roundState);
+      try {
+        await stateManager.waitForPacing(0, 'communityCardReveal');
+      } catch { /* pacing error should not halt the game */ }
+      wsManager.broadcast({ event: 'roundChange', data: { ...event, gameState: roundState } });
+      broadcastHandStrengths(roundState);
       console.log(`  --- ${event.round.toUpperCase()} --- [${event.communityCards.map(c => `${c.rank}${c.suit[0]}`).join(' ')}]`);
       break;
+    }
 
     case 'handEnd': {
       // Convert Map to object for JSON serialization
@@ -207,12 +324,137 @@ function handleGameEvent(event: GameEvent): void {
       for (const [id, cards] of event.showdownHands) {
         showdownObj[id] = cards;
       }
+      // Record hand results for scouting system
+      if (scoutingSystem) {
+        const showdownMap = new Map<string, any>();
+        for (const [id, cards] of Object.entries(showdownObj)) {
+          showdownMap.set(id, cards);
+        }
+        const winnersMap = new Map<string, number>();
+        for (const [id, amount] of Object.entries(winnersObj)) {
+          winnersMap.set(id, amount as number);
+        }
+        const activeIds = currentGame!.getPlayers().filter(p => !p.isEliminated).map(p => p.id);
+        scoutingSystem.recordHandEnd(showdownMap, winnersMap, activeIds);
+      }
+
+      // Record hand results for buff system reactive triggers
+      if (buffSystem) {
+        const currentPlayers = currentGame!.getPlayers();
+        for (const p of currentPlayers) {
+          if (!p.isEliminated) {
+            const chipsBefore = handChipSnapshots.get(p.id) ?? p.chips;
+            const chipsNow = p.chips + (winnersObj[p.id] ?? 0); // chips after pot distribution
+            buffSystem.recordHandResult(p.id, {
+              won: (winnersObj[p.id] ?? 0) > 0,
+              chipsDelta: chipsNow - chipsBefore,
+              stackBefore: chipsBefore,
+              foldedPreflop: handFoldedPreflop.has(p.id),
+              wasBluffed: false, // TODO: detect bluffs from showdown data
+            });
+          }
+        }
+      }
+
+      // Generate trash talk reactions (winner only)
+      const totalPot = event.pots.reduce((sum, p) => sum + p.amount, 0);
+      const everyoneFolded = event.showdownHands.size <= 1;
+      const currentPlayers2 = currentGame!.getPlayers();
+      const reactionContexts: ReactionContext[] = currentPlayers2
+        .filter(p => !p.isEliminated || (winnersObj[p.id] ?? 0) > 0)
+        .map(p => ({
+          playerId: p.id,
+          playerName: p.name,
+          isWinner: (winnersObj[p.id] ?? 0) > 0,
+          chipsDelta: (winnersObj[p.id] ?? 0) > 0
+            ? (winnersObj[p.id] ?? 0)
+            : -((handChipSnapshots.get(p.id) ?? p.chips) - p.chips),
+          potSize: totalPot,
+          everyoneFolded,
+          wasAllIn: p.isAllIn,
+          chipsBefore: handChipSnapshots.get(p.id) ?? p.chips,
+          isEliminated: p.isEliminated,
+          isFolded: p.isFolded,
+        }));
+
+      // Static fallback reactions (winner only)
+      const staticReactions = generateReactions(reactionContexts);
+
+      // Attempt LLM-generated trash talk for each winner
+      const gameStateNow = stateManager.getGameState();
+      const communityCardsStr = gameStateNow?.communityCards
+        .map(c => `${c.rank}${({ hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' } as Record<string, string>)[c.suit]}`)
+        .join(' ') ?? 'None';
+
+      const winnerContexts = reactionContexts.filter(c => c.isWinner);
+      let reactions: Reaction[];
+
+      if (!MOCK_LLM && winnerContexts.length > 0) {
+        // Build narratives and call LLM in parallel for all winners
+        const trashTalkPromises = winnerContexts.map(async (wCtx) => {
+          const player = currentPlayers2.find(p => p.id === wCtx.playerId);
+          if (!player) return null;
+
+          const holeCardsStr = (showdownObj[wCtx.playerId] ?? player.holeCards)
+            .map((c: any) => `${c.rank}${({ hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' } as Record<string, string>)[c.suit]}`)
+            .join(' ');
+
+          const narrative = buildHandNarrative(wCtx, reactionContexts, holeCardsStr, communityCardsStr, buildActionHistoryString());
+
+          const trashTalkCtx: TrashTalkContext = {
+            ...narrative,
+            buffPrompt: buffSystem?.getBuffPrompt(wCtx.playerId),
+          };
+
+          const providerConfig = player.provider === 'openrouter'
+            ? createOpenRouterConfig(player.model)
+            : undefined;
+
+          const line = await getTrashTalk({
+            playerId: player.id,
+            providerName: player.provider,
+            trashTalkContext: trashTalkCtx,
+            providerConfig,
+          });
+
+          if (line) {
+            return {
+              playerId: wCtx.playerId,
+              message: line,
+              tone: 'gloat' as const,
+              isLlmGenerated: true,
+            };
+          }
+          return null;
+        });
+
+        const llmResults = await Promise.all(trashTalkPromises);
+        const llmReactions: Reaction[] = llmResults.filter(r => r !== null) as Reaction[];
+
+        // Use LLM reactions for winners that got a response, static fallback for others
+        const llmWinnerIds = new Set(llmReactions.map(r => r.playerId));
+        const fallbacks = staticReactions.filter(r => !llmWinnerIds.has(r.playerId));
+        reactions = [...llmReactions, ...fallbacks];
+
+        for (const r of llmReactions) {
+          const name = currentPlayers2.find(p => p.id === r.playerId)?.name ?? r.playerId;
+          console.log(`  💬 ${name}: "${r.message}"`);
+        }
+      } else {
+        reactions = staticReactions;
+      }
+
+      // Apply showdown pacing
+      try {
+        await stateManager.waitForPacing(0, 'showdown');
+      } catch { /* pacing error should not halt the game */ }
       wsManager.broadcast({
         event: 'handEnd',
         data: {
           winners: winnersObj,
           potDistribution: event.pots,
           showdownHands: showdownObj,
+          reactions,
         },
       });
       console.log(`  Winners: ${Object.entries(winnersObj).map(([id, amt]) => `${id}: $${amt}`).join(', ')}`);
@@ -237,6 +479,22 @@ async function startGame(): Promise<void> {
   stateManager.reset();
   mockAdapters.clear();
   resetAllFailures();
+  handChipSnapshots.clear();
+  handFoldedPreflop.clear();
+
+  // Initialize buff system with session traits for each player
+  buffSystem = new BuffSystem(DECK_SEED);
+  for (const agent of AGENTS) {
+    const state = buffSystem.initPlayer(agent.id);
+    console.log(`  ${agent.name} session traits: ${state.sessionTraits.map(t => `${t.emoji} ${t.name}`).join(', ')}`);
+  }
+
+  // Initialize scouting system for opponent learning
+  scoutingSystem = new ScoutingSystem();
+  const allPlayerIds = AGENTS.map(a => a.id);
+  for (const agent of AGENTS) {
+    scoutingSystem.initPlayer(agent.id, allPlayerIds);
+  }
 
   console.log(`Starting game with ${AGENTS.length} agents (mock=${MOCK_LLM})`);
 

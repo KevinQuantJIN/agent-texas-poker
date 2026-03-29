@@ -16,22 +16,13 @@ import {
   ValidActions,
 } from './types';
 
-// Agent personality colors
-const AGENT_COLORS: Record<string, string> = {
-  anthropic: '#D4A574',
-  openai: '#74AA9C',
-  google: '#4285F4',
-  xai: '#FF6B35',
-  deepseek: '#00BCD4',
-  groq: '#9C27B0',
-};
-
 export interface AgentConfig {
   id: string;
   name: string;
   provider: string;
   model: string;
   seatIndex: number;
+  color: string;
 }
 
 export type GetActionFn = (
@@ -40,7 +31,7 @@ export type GetActionFn = (
   validActions: ValidActions,
 ) => Promise<AgentAction>;
 
-export type OnEventFn = (event: GameEvent) => void;
+export type OnEventFn = (event: GameEvent) => void | Promise<void>;
 
 export type GameEvent =
   | { type: 'handStart'; handNumber: number; dealerIndex: number; blinds: { small: number; big: number } }
@@ -87,7 +78,7 @@ export class Game {
       isBotFallback: false,
       seatIndex: a.seatIndex,
       lastAction: null,
-      color: AGENT_COLORS[a.provider] ?? '#888888',
+      color: a.color,
       totalBetThisHand: 0,
     }));
   }
@@ -119,6 +110,11 @@ export class Game {
 
   getPlayers(): PlayerState[] {
     return this.players.map(p => toPlayerState(p));
+  }
+
+  markPlayerAsBot(playerId: string): void {
+    const player = this.players.find(p => p.id === playerId);
+    if (player) player.isBotFallback = true;
   }
 
   /** Play a single hand from deal to showdown. */
@@ -163,7 +159,7 @@ export class Game {
       playersActedThisRound: new Set(),
     };
 
-    this.onEvent({
+    await this.onEvent({
       type: 'handStart',
       handNumber: this.handNumber,
       dealerIndex: this.dealerIndex,
@@ -176,38 +172,38 @@ export class Game {
     // Preflop betting
     await this.bettingRound(hand, 'preflop');
     if (this.isHandOver(hand)) {
-      this.resolveHand(hand);
+      await this.resolveHand(hand);
       return;
     }
 
     // Flop
     deal(hand.deck, 1); // burn
     hand.communityCards.push(...deal(hand.deck, 3));
-    this.onEvent({ type: 'roundChange', round: 'flop', communityCards: [...hand.communityCards] });
+    await this.onEvent({ type: 'roundChange', round: 'flop', communityCards: [...hand.communityCards] });
     await this.bettingRound(hand, 'flop');
     if (this.isHandOver(hand)) {
-      this.resolveHand(hand);
+      await this.resolveHand(hand);
       return;
     }
 
     // Turn
     deal(hand.deck, 1); // burn
     hand.communityCards.push(...deal(hand.deck, 1));
-    this.onEvent({ type: 'roundChange', round: 'turn', communityCards: [...hand.communityCards] });
+    await this.onEvent({ type: 'roundChange', round: 'turn', communityCards: [...hand.communityCards] });
     await this.bettingRound(hand, 'turn');
     if (this.isHandOver(hand)) {
-      this.resolveHand(hand);
+      await this.resolveHand(hand);
       return;
     }
 
     // River
     deal(hand.deck, 1); // burn
     hand.communityCards.push(...deal(hand.deck, 1));
-    this.onEvent({ type: 'roundChange', round: 'river', communityCards: [...hand.communityCards] });
+    await this.onEvent({ type: 'roundChange', round: 'river', communityCards: [...hand.communityCards] });
     await this.bettingRound(hand, 'river');
 
     // Showdown
-    this.resolveHand(hand);
+    await this.resolveHand(hand);
   }
 
   private postBlinds(hand: HandState, activePlayers: InternalPlayer[]): void {
@@ -260,6 +256,11 @@ export class Game {
       hand.lastRaiseAmount = this.config.blinds.big;
     }
 
+    // Skip the betting round if fewer than 2 players can act.
+    // This happens when all remaining players are all-in — no meaningful betting is possible.
+    const canAct = this.players.filter(p => !p.isEliminated && !p.isFolded && !p.isAllIn);
+    if (canAct.length < 2) return;
+
     // Determine first player to act
     const activePlayers = this.players.filter(p => !p.isEliminated);
     let startIndex: number;
@@ -302,9 +303,9 @@ export class Game {
         this.config.blinds.big
       );
 
-      const gameState = this.buildGameState(hand);
+      const gameState = this.buildGameState(hand, player.id);
       const rawAction = await this.getAction(toPlayerState(player), gameState, validActions);
-      const action = validateAction(rawAction, player, validActions);
+      const action = validateAction(rawAction, validActions);
 
       // Track raise amount before applying
       const previousBet = player.currentBet;
@@ -312,12 +313,15 @@ export class Game {
 
       if (action.action === 'raise') {
         const raiseSize = player.currentBet - hand.highestBet;
-        if (raiseSize > 0) {
-          hand.lastRaiseAmount = raiseSize;
-        }
         hand.highestBet = player.currentBet;
-        // Reset acted tracking — everyone needs to act again after a raise
-        hand.playersActedThisRound = new Set();
+
+        // Only reopen betting if this is a full raise (meets minimum raise size).
+        // A short all-in does NOT reopen — other players can only call or fold.
+        const minRaiseSize = Math.max(hand.lastRaiseAmount, this.config.blinds.big);
+        if (raiseSize >= minRaiseSize) {
+          hand.lastRaiseAmount = raiseSize;
+          hand.playersActedThisRound = new Set();
+        }
       }
 
       if (player.currentBet > hand.highestBet) {
@@ -328,11 +332,11 @@ export class Game {
       hand.actionCount++;
       player.lastAction = action;
 
-      this.onEvent({
+      await this.onEvent({
         type: 'action',
         player: toPlayerState(player),
         action,
-        gameState: this.buildGameState(hand),
+        gameState: this.buildGameState(hand, player.id),
       });
 
       currentIndex = this.findNextActivePlayer(currentIndex);
@@ -366,7 +370,7 @@ export class Game {
     return notFolded.length <= 1;
   }
 
-  private resolveHand(hand: HandState): void {
+  private async resolveHand(hand: HandState): Promise<void> {
     const pots = calculatePots(hand.players);
     const notFolded = this.players.filter(p => !p.isEliminated && !p.isFolded);
     const totalWinnings = new Map<string, number>();
@@ -411,7 +415,7 @@ export class Game {
       }
     }
 
-    this.onEvent({
+    await this.onEvent({
       type: 'handEnd',
       winners: totalWinnings,
       pots,
@@ -452,13 +456,13 @@ export class Game {
     return this.findNextActivePlayer(targetIndex);
   }
 
-  private buildGameState(hand: HandState): GameState {
+  private buildGameState(hand: HandState, currentPlayerId?: string): GameState {
     return {
       handNumber: this.handNumber,
       round: hand.round,
       communityCards: [...hand.communityCards],
       pots: calculatePots(hand.players),
-      currentPlayerId: null,
+      currentPlayerId: currentPlayerId ?? null,
       players: hand.players.map(toPlayerState),
       dealerIndex: hand.dealerIndex,
       blinds: this.config.blinds,

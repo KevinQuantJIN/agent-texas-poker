@@ -2,9 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, buildUserPrompt, type PromptContext } from '../../src/adapters/prompt.js';
 
 describe('buildSystemPrompt', () => {
-  it('includes name and personality', () => {
+  it('includes name and base poker prompt with personality fallback', () => {
     const result = buildSystemPrompt('Claude', 'Analytical, cautious, reads opponents');
-    expect(result).toBe('You are Claude, a poker player. Your style: Analytical, cautious, reads opponents.');
+    expect(result).toContain('You are Claude, a professional poker player');
+    expect(result).toContain('GAMBLER');
+    expect(result).toContain('Your style: Analytical, cautious, reads opponents');
+  });
+
+  it('uses buff prompt instead of personality when provided', () => {
+    const result = buildSystemPrompt('Claude', 'ignored', 'SESSION TRAIT: You love sets.\n\nCURRENT MOOD: TILTED.');
+    expect(result).toContain('SESSION TRAIT: You love sets.');
+    expect(result).toContain('CURRENT MOOD: TILTED.');
+    expect(result).not.toContain('Your style: ignored');
   });
 });
 
@@ -23,6 +32,7 @@ describe('buildUserPrompt', () => {
     ],
     pot: 500,
     chips: 9500,
+    chipsInPot: 100,
     round: 'flop',
     actionHistory: 'GPT-4o: raise $400 → Claude: call $400',
     validActions: {

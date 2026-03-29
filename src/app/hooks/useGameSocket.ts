@@ -1,10 +1,33 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { GameState, AgentThought } from '../../engine/types';
-import { mockGameState, mockThoughts } from '../mock-data';
+import type { GameState, AgentThought, Card } from '../../engine/types';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting';
+
+export interface HandStrengthInfo {
+  made: string;
+  draws: string[];
+  description: string;
+}
+
+export interface PlayerReaction {
+  playerId: string;
+  message: string;
+  tone: 'gloat' | 'tilted' | 'respect' | 'salty' | 'chill' | 'devastated';
+  isLlmGenerated?: boolean;
+}
+
+export interface HandResult {
+  winners: Record<string, number>; // playerId → chips won
+  showdownHands: Record<string, Card[]>; // playerId → hole cards
+  reactions: PlayerReaction[];
+}
+
+export interface BuffDisplay {
+  sessionTraits: Array<{ name: string; emoji: string; description: string }>;
+  currentBuff: { name: string; emoji: string; description: string } | null;
+}
 
 interface GameSocketState {
   gameState: GameState | null;
@@ -13,11 +36,14 @@ interface GameSocketState {
   isGameActive: boolean;
   isGameOver: boolean;
   gameOverData: any | null;
+  handResult: HandResult | null;
+  playerBuffs: Record<string, BuffDisplay>;
+  handStrengths: Record<string, HandStrengthInfo>;
   setSpeed: (speed: number) => void;
   startGame: () => void;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? `ws://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3001`;
 const RECONNECT_DELAY = 2000;
 
 export function useGameSocket(): GameSocketState {
@@ -27,6 +53,9 @@ export function useGameSocket(): GameSocketState {
   const [isGameActive, setIsGameActive] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);
   const [gameOverData, setGameOverData] = useState<any>(null);
+  const [handResult, setHandResult] = useState<HandResult | null>(null);
+  const [playerBuffs, setPlayerBuffs] = useState<Record<string, BuffDisplay>>({});
+  const [handStrengths, setHandStrengths] = useState<Record<string, HandStrengthInfo>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,26 +116,54 @@ export function useGameSocket(): GameSocketState {
         const thought: AgentThought = {
           playerId: msg.data.player.id,
           playerName: msg.data.player.name,
+          color: msg.data.player.color ?? '#666',
           reasoning: msg.data.reasoning,
           action: msg.data.action,
           handNumber: msg.data.gameState?.handNumber ?? 0,
           round: msg.data.gameState?.round ?? '',
-          timestamp: Date.now(),
+          timestamp: msg.data.action.timestamp ?? Date.now(),
         };
-        setThoughts(prev => [...prev.slice(-19), thought]);
+        // Deduplicate by playerId + handNumber + round + action
+        setThoughts(prev => {
+          const isDup = prev.some(t =>
+            t.playerId === thought.playerId &&
+            t.handNumber === thought.handNumber &&
+            t.round === thought.round &&
+            t.action.action === thought.action.action &&
+            t.reasoning === thought.reasoning
+          );
+          if (isDup) return prev;
+          return [...prev.slice(-19), thought];
+        });
         break;
 
       case 'handStart':
         setIsGameActive(true);
         setIsGameOver(false);
+        setHandResult(null);
+        setHandStrengths({});
+        // Capture buff data from hand start event
+        if (msg.data.buffs) {
+          setPlayerBuffs(msg.data.buffs);
+        }
+        break;
+
+      case 'handStrengths':
+        setHandStrengths(msg.data ?? {});
         break;
 
       case 'handEnd':
-        // Could show showdown animation
+        setHandResult({
+          winners: msg.data.winners,
+          showdownHands: msg.data.showdownHands ?? {},
+          reactions: msg.data.reactions ?? [],
+        });
         break;
 
       case 'roundChange':
-        // GameState update will come with next action
+        if (msg.data.gameState) {
+          setGameState(msg.data.gameState);
+        }
         break;
 
       case 'gameOver':
@@ -135,6 +192,7 @@ export function useGameSocket(): GameSocketState {
     setIsGameOver(false);
     setGameOverData(null);
     setThoughts([]);
+    setHandResult(null);
     wsRef.current?.send(JSON.stringify({ event: 'startGame', data: {} }));
   }, []);
 
@@ -153,6 +211,9 @@ export function useGameSocket(): GameSocketState {
     isGameActive,
     isGameOver,
     gameOverData,
+    handResult,
+    playerBuffs,
+    handStrengths,
     setSpeed,
     startGame,
   };

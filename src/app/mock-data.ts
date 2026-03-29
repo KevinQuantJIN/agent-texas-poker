@@ -36,7 +36,7 @@ export const mockGameState: GameState = {
       isEliminated: false,
       isBotFallback: false,
       seatIndex: 0,
-      lastAction: { action: 'raise', amount: 200, reasoning: 'Top pair with a strong kicker. I want to build the pot while I likely have the best hand.', latencyMs: 1240 },
+      lastAction: { action: 'raise', amount: 200, reasoning: 'Top pair strong kicker, building the pot.', latencyMs: 1240 },
       color: AGENT_COLORS.claude,
     },
     {
@@ -68,7 +68,7 @@ export const mockGameState: GameState = {
       isEliminated: false,
       isBotFallback: false,
       seatIndex: 2,
-      lastAction: { action: 'call', reasoning: 'Mid pair, decent implied odds. I can reevaluate on the turn.', latencyMs: 890 },
+      lastAction: { action: 'call', reasoning: 'Mid pair, good implied odds here.', latencyMs: 890 },
       color: AGENT_COLORS.gemini,
     },
     {
@@ -84,7 +84,7 @@ export const mockGameState: GameState = {
       isEliminated: false,
       isBotFallback: false,
       seatIndex: 3,
-      lastAction: { action: 'fold', reasoning: 'Even I know when to walk away. This board is too wet for my garbage hand. Live to fight another day!', latencyMs: 650 },
+      lastAction: { action: 'fold', reasoning: 'Garbage hand on a wet board, peace out.', latencyMs: 650 },
       color: AGENT_COLORS.grok,
     },
     {
@@ -100,7 +100,7 @@ export const mockGameState: GameState = {
       isEliminated: false,
       isBotFallback: false,
       seatIndex: 4,
-      lastAction: { action: 'call', reasoning: 'Pot odds of 6:1 justify a call with my pocket tens. Probability of improving to a set on turn is ~4.3%.', latencyMs: 1100 },
+      lastAction: { action: 'call', reasoning: 'Pocket tens, 6:1 pot odds, easy call.', latencyMs: 1100 },
       color: AGENT_COLORS.deepseek,
     },
     {
@@ -126,7 +126,8 @@ export const mockThoughts: AgentThought[] = [
   {
     playerId: 'grok',
     playerName: 'Grok',
-    reasoning: 'Even I know when to walk away. This board is too wet for my garbage hand. Live to fight another day!',
+    color: AGENT_COLORS.grok,
+    reasoning: 'Garbage hand on a wet board, peace out.',
     action: { action: 'fold', reasoning: '', latencyMs: 650 },
     handNumber: 7,
     round: 'flop',
@@ -135,7 +136,8 @@ export const mockThoughts: AgentThought[] = [
   {
     playerId: 'deepseek',
     playerName: 'DeepSeek',
-    reasoning: 'Pot odds of 6:1 justify a call with my pocket tens. Probability of improving to a set on turn is approximately 4.3%. Expected value is positive.',
+    color: AGENT_COLORS.deepseek,
+    reasoning: 'Pocket tens, 6:1 pot odds, easy call.',
     action: { action: 'call', reasoning: '', latencyMs: 1100 },
     handNumber: 7,
     round: 'flop',
@@ -144,7 +146,8 @@ export const mockThoughts: AgentThought[] = [
   {
     playerId: 'claude',
     playerName: 'Claude',
-    reasoning: 'Top pair with a strong kicker on a relatively dry board. I want to build the pot while I likely have the best hand. A raise to $200 prices out draws while keeping weaker made hands in.',
+    color: AGENT_COLORS.claude,
+    reasoning: 'Top pair strong kicker, building the pot.',
     action: { action: 'raise', amount: 200, reasoning: '', latencyMs: 1240 },
     handNumber: 7,
     round: 'flop',
@@ -153,7 +156,8 @@ export const mockThoughts: AgentThought[] = [
   {
     playerId: 'gemini',
     playerName: 'Gemini',
-    reasoning: 'Mid pair with decent implied odds. The raise is small relative to the pot, so I can profitably call and reevaluate on the turn. If I hit my set, I can extract maximum value.',
+    color: AGENT_COLORS.gemini,
+    reasoning: 'Mid pair, good implied odds here.',
     action: { action: 'call', reasoning: '', latencyMs: 890 },
     handNumber: 7,
     round: 'flop',
