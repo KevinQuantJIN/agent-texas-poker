@@ -1,0 +1,40 @@
+{
+  "name": "agent-texas-poker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"next dev\" \"tsx watch src/server/index.ts\"",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "start": "concurrently \"next start\" \"node dist/server/index.js\""
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "framer-motion": "^11",
+    "https-proxy-agent": "^8.0.0",
+    "next": "^15",
+    "pokersolver": "^2.1.4",
+    "react": "^19",
+    "react-dom": "^19",
+    "undici": "^7.24.6",
+    "ws": "^8"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/ws": "^8",
+    "concurrently": "^9",
+    "eslint": "^9",
+    "eslint-config-next": "^15",
+    "postcss": "^8",
+    "tailwindcss": "^4",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
