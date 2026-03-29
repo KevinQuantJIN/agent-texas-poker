@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: agent-texas-poker
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node proxy.js & HOSTNAME=0.0.0.0 PORT=3000 node .next/standalone/server.js & GAME_SERVER_PORT=3001 node dist/server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: GAME_SERVER_PORT
+        value: "3001"
+      - key: OPENROUTER_API_KEY
+        sync: false

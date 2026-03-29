@@ -43,7 +43,17 @@ interface GameSocketState {
   startGame: () => void;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? `ws://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3001`;
+function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  if (typeof window === 'undefined') return 'ws://localhost:3001';
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // In production, WS is on /ws path via same host; in dev, separate port
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return `${proto}//${window.location.host}/ws`;
+  }
+  return `ws://${window.location.hostname}:3001`;
+}
+const WS_URL = getWsUrl();
 const RECONNECT_DELAY = 2000;
 
 export function useGameSocket(): GameSocketState {
