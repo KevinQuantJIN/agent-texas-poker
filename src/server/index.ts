@@ -96,6 +96,11 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
     }
+    // Cancel any pending auto-restart
+    if (autoRestartTimer) {
+      clearTimeout(autoRestartTimer);
+      autoRestartTimer = null;
+    }
     // Stop current game and restart
     if (currentGame) {
       currentGame.stop();
@@ -103,7 +108,7 @@ const server = http.createServer((req, res) => {
     isGameRunning = false;
     stateManager.reset();
     console.log('\n🔄 Admin triggered restart');
-    setTimeout(() => startGame(), 1000);
+    setTimeout(() => startGame(), 2000);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'restarting' }));
     return;
@@ -144,7 +149,9 @@ function broadcastHandStrengths(gameState: GameState): void {
 // ---- Game runner ----
 
 let currentGame: Game | null = null;
+let currentGamePromise: Promise<void> | null = null;
 let isGameRunning = false;
+let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
 let buffSystem: BuffSystem | null = null;
 let scoutingSystem: ScoutingSystem | null = null;
 let strategyJournal: StrategyJournal | null = null;
@@ -532,10 +539,12 @@ async function handleGameEvent(event: GameEvent): Promise<void> {
     case 'gameOver':
       wsManager.broadcast({ event: 'gameOver', data: event });
       isGameRunning = false;
-      stateManager.reset(); // Clear stale state so reconnecting clients see start screen
+      stateManager.reset();
       console.log(`\n🏆 Game Over! Winner: ${event.winner.name} ($${event.winner.chips})`);
       console.log('  Auto-restarting in 10 seconds...');
-      setTimeout(() => {
+      if (autoRestartTimer) clearTimeout(autoRestartTimer);
+      autoRestartTimer = setTimeout(() => {
+        autoRestartTimer = null;
         if (!isGameRunning) {
           console.log('\n🔄 Auto-restarting game...');
           startGame();
@@ -549,6 +558,13 @@ async function startGame(): Promise<void> {
   if (isGameRunning) {
     console.log('Game already running');
     return;
+  }
+
+  // Wait for previous game to fully stop before starting new one
+  if (currentGamePromise) {
+    console.log('  Waiting for previous game to finish...');
+    await currentGamePromise.catch(() => {});
+    currentGamePromise = null;
   }
 
   isGameRunning = true;
@@ -594,15 +610,19 @@ async function startGame(): Promise<void> {
 
   currentGame = game;
 
+  const gamePromise = game.run();
+  currentGamePromise = gamePromise;
+
   try {
-    await game.run();
+    await gamePromise;
   } catch (err) {
     console.error('Game error:', err);
     isGameRunning = false;
     stateManager.reset();
-    // Auto-restart after error
     console.log('  Auto-restarting after error in 10 seconds...');
-    setTimeout(() => {
+    if (autoRestartTimer) clearTimeout(autoRestartTimer);
+    autoRestartTimer = setTimeout(() => {
+      autoRestartTimer = null;
       if (!isGameRunning) {
         console.log('\n🔄 Auto-restarting game after error...');
         startGame();

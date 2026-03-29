@@ -201,7 +201,13 @@ export function analyzeHandStrength(holeCards: Card[], communityCards: Card[]): 
 
   // Evaluate made hand with pokersolver
   const allCards = [...holeCards, ...communityCards].map(toPokersolverCard);
-  const solved = Hand.solve(allCards);
+  let solved: any;
+  try {
+    solved = Hand.solve(allCards);
+  } catch {
+    // pokersolver throws on duplicate cards (can happen during state transitions)
+    return { made: 'Unknown', draws: [], description: 'Unknown' };
+  }
   const made = solved.name ?? 'Unknown';
   const description = solved.descr ?? made;
 
