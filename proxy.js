@@ -7,7 +7,7 @@ const NEXT_PORT = 3000;
 const WS_PORT = 3001;
 
 const server = http.createServer((req, res) => {
-  const target = req.url?.startsWith('/ws') ? WS_PORT : NEXT_PORT;
+  const target = (req.url?.startsWith('/ws') || req.url?.startsWith('/api/')) ? WS_PORT : NEXT_PORT;
   const proxyReq = http.request(
     { hostname: '127.0.0.1', port: target, path: req.url, method: req.method, headers: req.headers },
     (proxyRes) => {

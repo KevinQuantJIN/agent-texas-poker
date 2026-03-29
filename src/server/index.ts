@@ -69,6 +69,7 @@ const AGENTS: AgentConfig[] = USE_OPENROUTER
 
 const PORT = parseInt(process.env.GAME_SERVER_PORT ?? '3001', 10);
 const DEMO_TOKEN = process.env.DEMO_TOKEN ?? '';
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? '';
 const MOCK_LLM = process.env.MOCK_LLM === 'true';
 const DECK_SEED = process.env.DECK_SEED || undefined;
 
@@ -81,6 +82,33 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ status: 'ok', clients: wsManager?.getClientCount() ?? 0 }));
     return;
   }
+
+  // Admin restart endpoint: POST /api/restart
+  if (req.method === 'POST' && req.url === '/api/restart') {
+    if (!ADMIN_TOKEN) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'ADMIN_TOKEN not configured' }));
+      return;
+    }
+    const auth = req.headers.authorization ?? '';
+    if (auth !== `Bearer ${ADMIN_TOKEN}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+    // Stop current game and restart
+    if (currentGame) {
+      currentGame.stop();
+    }
+    isGameRunning = false;
+    stateManager.reset();
+    console.log('\n🔄 Admin triggered restart');
+    setTimeout(() => startGame(), 1000);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'restarting' }));
+    return;
+  }
+
   res.writeHead(404);
   res.end();
 });
